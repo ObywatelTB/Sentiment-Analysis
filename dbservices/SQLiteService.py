@@ -59,7 +59,6 @@ class SQLiteService(DBInterface):
 
         if last_percents != 100.0:
             oldest_timef = newest_timef - (newest_timef-oldest_timef)*last_percents
-        # do dokonczenia-^
 
         timeshift, timeunit = re.split('([0-9]+)', analysed_period)[1:]
         timeshift = int(timeshift)
@@ -124,43 +123,69 @@ class SQLiteService(DBInterface):
         """
         conn = sqlite3.connect(dbpath)
         cur = conn.cursor()
-        data = cur.execute("SELECT COUNT(*) FROM tweets_table") 
         cur_result = cur.fetchone()
         conn.close()
+
         return cur_result[0]
 
 
-    def get_all_opinions(self, table_name: str) -> pd.DataFrame:
+    def get_all_records(self, table_name: str) -> pd.DataFrame:
         """
         Get all records of the DB table.
+
+        Args:
+            table_name (str) : Name of the DB table.
+        
+        Returns:
+           
+        Raises:
         """
         conn = sqlite3.connect(self.dbpath)
-        opinions = pd.read_sql(f"SELECT* FROM {table_name}; ", conn)
+        records = pd.read_sql(f"SELECT* FROM {table_name}; ", conn)
         conn.close()
-        opinions.drop('index', axis=1, inplace=True)
-        opinions['date'] = opinions['date'].apply(lambda d: datetime.strptime(
+
+        records.drop('index', axis=1, inplace=True)
+        records['date'] = records['date'].apply(lambda d: datetime.strptime(
                                                     d,'%Y-%m-%d %H:%M:%S'))
-        opinions = opinions.set_index( pd.DatetimeIndex(opinions['date']) )
-        opinions.drop('date',axis=1, inplace=True)
-        opinions.sort_index(inplace=True)
-        return opinions
+        records = records.set_index( pd.DatetimeIndex(records['date']) )
+        records.drop('date',axis=1, inplace=True)
+        records.sort_index(inplace=True)
+        return records
 
 
     def delete_duplicates(self, tablename: str) -> None:
-        """Delete..."""
+        """
+        Delete duplicates from the given tabele.
+
+        Args:
+            table_name (str) : Name of the table where duplicates should be deleted.
+        
+        Returns:
+            None
+        Raises:
+        """
         conn = sqlite3.connect(self.dbpath)
         cur = conn.cursor()
         command = 'DELETE FROM ' + tablename +' WHERE rowid NOT IN (SELECT \
-                    min(rowid) FROM '+tablename+' GROUP BY status_id);'
+                    min(rowid) FROM ' + tablename + ' GROUP BY status_id);'
         cur.execute(command)
         conn.commit()
         conn.close()
 
     
-    def post_list_of_data(self, tablename: str, data: pd.DataFrame) -> None:
-        """P"""
+    def post_list_of_data(self, tablename: str, data_to_post: pd.DataFrame) -> None:
+        """
+        Write data to the given table of the database.
+
+        Args:
+            table_name (str) : Name of the DB table.
+            data (DataFrame): Data to be written to the DB.
+        Returns:
+            None
+        Raises:
+        """
         conn = sqlite3.connect(self.dbpath)
-        data.to_sql(tablename, conn, schema=None, if_exists='append')
+        data_to_post.to_sql(tablename, conn, schema=None, if_exists='append')
         conn.close()
 
     
