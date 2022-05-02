@@ -10,11 +10,11 @@ import re
 from typing import List, Dict, Any, Tuple, Callable
 
 import sentanalysis.nltk_utils as vdr
-from dbgetter.TableInterface import TableInterface
+from dbservices.DBInterface import DBInterface
 
 
 def analyse_opinions(MCparams: Dict[str, Any], dp: Dict[str, str],
-        dbtable: TableInterface, last_percents: float = 100.0) -> None:
+        dbtable: DBInterface, last_percents: float = 100.0) -> None:
     """
     Perform a sentiment analysis on a dataset of opinions, save the 
     obtained scores.
@@ -48,10 +48,11 @@ def analyse_opinions(MCparams: Dict[str, Any], dp: Dict[str, str],
     if dbpath == '':
         raise Exception('The chosen DB (filtered or not) not provided!')
 
-    dbtable.setvalues(dbpath, dbtablename)
+    dbtable.setvalues(dbpath)
     start_date, end_date, timeperiods = dbtable.specify_data_range(analysed_period, 
+                                                                    dbtablename,
                                                                     last_percents)
-    scores = count_scores(MCparams, dbtable, analysed_period, 
+    scores = count_scores(MCparams, dbtable, dbtablename, analysed_period, 
                             timeperiods, start_date, end_date) 
     
     if not os.path.exists(os.path.dirname(dp['scores'])):
@@ -61,7 +62,7 @@ def analyse_opinions(MCparams: Dict[str, Any], dp: Dict[str, str],
 
 
 #===Encapsulated functions
-def count_scores(analysis_params: Dict[str, Any], dbtable: TableInterface, 
+def count_scores(analysis_params: Dict[str, Any], dbtable: DBInterface, tablename:str,
                 analysed_period: str, timeperiods: int, start_date: datetime, 
                 end_date: datetime) -> pd.DataFrame:
     """
@@ -73,6 +74,7 @@ def count_scores(analysis_params: Dict[str, Any], dbtable: TableInterface,
         sentiment evaluation (treshold, is_score_binary, etc.).
         dbtable (TableInterface) : An object providing access to a DB 
         table, and functions to get DB records.
+        tablename (str) : Name of chosen DB table.
         analysed_period (str) : A parameter in the xn form, where x is 
         number, n is min/h/H/d.
         timeperiods (int) : A number of time periods into which we split 
@@ -92,13 +94,15 @@ def count_scores(analysis_params: Dict[str, Any], dbtable: TableInterface,
     with tqdm(total=timeperiods) as progress_bar:     # progress bar
         while interval_time < end_date:    
             last_timestamp = interval_time + datatime_shift - timedelta(seconds=1)
-            interval_of_opinions = dbtable.get_data_batch(interval_time, last_timestamp)
+            interval_of_opinions = dbtable.get_data_batch(interval_time, tablename, 
+                                                            last_timestamp)
 
             scores_period = vdr.evaluate_sentiment(interval_of_opinions, analysis_params)
-            scores_period = scores_period.append(pd.Series(index=[start_date]))
+            scores_period = pd.concat([scores_period, pd.Series(index=[start_date], 
+                                                                dtype=np.float64)])
             scores_period = scores_period.groupby(pd.Grouper(freq=analysed_period, 
-                                                        origin='start')
-                                            ).agg(['mean','count'])
+                                                            origin='start')
+                                                ).agg(['mean','count'])
             scores_period.dropna(inplace=True)
 
             scores = pd.concat([scores, scores_period])

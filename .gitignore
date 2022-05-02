@@ -1,1 +1,5 @@
+/.vscode
+
 /__pycache__
+/dbservices/__pycache__
+/sentanalysis/__pycache__
