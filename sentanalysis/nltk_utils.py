@@ -47,7 +47,7 @@ def evaluate_sentiment(opinions: pd.DataFrame, analysis_parameters: Dict[str, An
     is_score_binary = analysis_parameters.get('is_score_binary', False)
     keywords = analysis_parameters.get('keywords', [])      # rather not used
 
-    scores = pd.Series(index=opinions.index)
+    scores = pd.Series(index=opinions.index, dtype=np.float64)
     scores.loc[:] = evaluate_opinions(opinions.content.values, 
                                             treshold, is_score_binary)
     scores = scores[scores!=0]

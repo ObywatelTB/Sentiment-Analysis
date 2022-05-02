@@ -6,22 +6,21 @@ import sqlite3
 import re
 from typing import List, Dict, Any, Tuple, Callable
 
-from dbgetter.TableInterface import TableInterface
+from dbservices.DBInterface import DBInterface
 
 
-class SQLtable(TableInterface):
+class SQLiteService(DBInterface):
 
     def __init__(self):
         pass
     
 
-    def setvalues(self, dbpath: str, tablename: str) -> None: 
+    def set_dbpath(self, dbpath: str) -> None: 
         """Initializes the values of the parameters."""
         self.dbpath = dbpath
-        self.tablename = tablename
 
 
-    def specify_data_range(self, analysed_period: str,
+    def specify_data_range(self, tablename: str, analysed_period: str,
                             last_percents: float = 100.0) -> Tuple[datetime, datetime, int]:
         """
         Give periods number, the first and the last timestamps and the number
@@ -42,7 +41,6 @@ class SQLtable(TableInterface):
         Raises:
         """
         dbpath = self.dbpath
-        tablename = self.tablename
         
         conn = sqlite3.connect(dbpath) 
         command_oldest = f"SELECT* from {tablename} order by date asc limit 1"
@@ -79,7 +77,7 @@ class SQLtable(TableInterface):
         return start_date, end_date, periods #, nr_of_records
 
 
-    def get_data_batch(self, period_start: datetime, 
+    def get_data_batch(self, tablename: str, period_start: datetime, 
                         period_end: datetime) -> pd.DataFrame:
         """
         Give back data from a MySQL DB, for a specified time period.
@@ -96,7 +94,6 @@ class SQLtable(TableInterface):
         Raises:
         """
         dbpath = self.dbpath
-        tablename = self.tablename
 
         period_start = datetime.strftime(period_start,'%Y-%m-%d %H:%M:%S')
         period_end = datetime.strftime(period_end,'%Y-%m-%d %H:%M:%S')
@@ -115,7 +112,7 @@ class SQLtable(TableInterface):
         return period_records
 
 
-    def get_sql_table_lenght(dbpath: str):  
+    def get_sql_table_lenght(self, dbpath: str):  
         """
         Get the nr of records in the SQL DB table.
 
@@ -133,11 +130,11 @@ class SQLtable(TableInterface):
         return cur_result[0]
 
 
-    def read_all_opinions(db_name: str, table_name: str) -> pd.DataFrame:
+    def get_all_opinions(self, table_name: str) -> pd.DataFrame:
         """
         Get all records of the DB table.
         """
-        conn = sqlite3.connect(db_name)
+        conn = sqlite3.connect(self.dbpath)
         opinions = pd.read_sql(f"SELECT* FROM {table_name}; ", conn)
         conn.close()
         opinions.drop('index', axis=1, inplace=True)
@@ -147,3 +144,23 @@ class SQLtable(TableInterface):
         opinions.drop('date',axis=1, inplace=True)
         opinions.sort_index(inplace=True)
         return opinions
+
+
+    def delete_duplicates(self, tablename: str) -> None:
+        """Delete..."""
+        conn = sqlite3.connect(self.dbpath)
+        cur = conn.cursor()
+        command = 'DELETE FROM ' + tablename +' WHERE rowid NOT IN (SELECT \
+                    min(rowid) FROM '+tablename+' GROUP BY status_id);'
+        cur.execute(command)
+        conn.commit()
+        conn.close()
+
+    
+    def post_list_of_data(self, tablename: str, data: pd.DataFrame) -> None:
+        """P"""
+        conn = sqlite3.connect(self.dbpath)
+        data.to_sql(tablename, conn, schema=None, if_exists='append')
+        conn.close()
+
+    

@@ -21,4 +21,6 @@ from sentanalysis.sentiment_analysis import analyse_opinions
 from sentanalysis.nltk_utils import find_common_words_in_tweets
 from sentanalysis.nltk_utils import aggregate_filters
 from sentanalysis.nltk_utils import save_filters
-from sentanalysis.train_sentiment_ML import predict, vectorize_and_save_ds, create_model
+
+from sentanalysis.ML_prepare_dataset import vectorize_and_save_ds
+from sentanalysis.ML_train import perform_machine_learning, predict

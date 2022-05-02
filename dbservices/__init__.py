@@ -1,7 +1,7 @@
 """
 DbGetter
 ===
-The package provides tools to get records to and from databases.
+The package provides services to get records to and from databases.
 It supports:
 - the Firebase cloud DB 
 - local MySQL
@@ -18,4 +18,4 @@ Gives access to classes:
 
 # from dbgetter.firebase_support import fun1
 
-from dbgetter.SQLtable import SQLtable
+from dbservices.SQLiteService import SQLiteService
