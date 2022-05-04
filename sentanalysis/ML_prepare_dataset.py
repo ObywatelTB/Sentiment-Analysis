@@ -16,7 +16,7 @@ import tensorflow_hub as hub
 def load_datasets(dirs: Dict[str, str]) -> Tuple:
     """Load train and validation datasets. Load kaggle and """
     df = get_kaggle_encoded_tweets(dirs)
-    df_ours = pd.read_csv(dirs['our_rated_tweets_encoded'],header=None,
+    df_ours = pd.read_csv(dirs['selected_tweets_encoded'],header=None,
                         usecols=[1,2],names=['tweet','sentiment'])
     df_ours['tweet'] = df_ours['tweet'].apply(string_to_ndarray)
 
@@ -41,7 +41,7 @@ def get_kaggle_encoded_tweets(dirs: Dict[str, str], dirname: str ='kaggle1638301
         dfs_arr (DataFrame) : Texts encoded with the Gooogle USE encoder.
     Raises:
     """
-    dirpath = os.path.join(dirs['dir0'], 'models', 'tweets_encoded', dirname)
+    dirpath = dirs.get('kaggle_encoded')
     dfs_arr = []
     filenames = os.listdir(dirpath)[:5]
     with tqdm(total= len(filenames) ) as progress_bar:
@@ -53,16 +53,16 @@ def get_kaggle_encoded_tweets(dirs: Dict[str, str], dirname: str ='kaggle1638301
     return pd.concat(dfs_arr)
 
 
-def vectorize_and_save_ds(model_parameters: Dict[str, Any], dirs: Dict[str, str], 
-                        which_df: str = 'kaggleNOT') -> None:
+def vectorize_phrases(model_parameters: Dict[str, Any], dirs: Dict[str, str], 
+                        dataset_name: str = 'selection') -> None:
     """
-    Encode texts using Google USE and save in the files.
+    Encode texts of choice using Google USE and save in the files.
 
     Args:
         model_parameters (dict[str, Any]) : Parameters concerning model 
         structure, training parameters.
         dirs (dirs[str, str]) : A set of needed directory paths.
-        which_df (str) : 'kaggle'/other - Chose between two different sets
+        which_df (str) : 'kaggle'/'selection' - Chose between two different sets
         of texts to vectorize.
 
     Returns:
@@ -70,27 +70,54 @@ def vectorize_and_save_ds(model_parameters: Dict[str, Any], dirs: Dict[str, str]
 
     Raises:
     """
-    rprint('[italic red] Loading the encoder... [/italic red]')
     dataset_encoding = model_parameters.get('dataset_encoding', '')
-    embed = hub.load(dirs['universal_sentence_encoder'])
+    rprint('[italic red] Loading the encoder... [/italic red]')
+    embed = hub.load(dirs.get('universal_sentence_encoder', ''))
 
+    export_dirpath = {
+        'selection': os.path.join(dirs['opinions_encoded'], 
+                                'selected_tweets_encoded'),
+        'kaggle': os.path.join(dirs['opinions_encoded'],
+                                f'kaggle{int(time.time())}')
+    }[dataset_name]
+
+    if not os.path.exists(export_dirpath):
+        os.makedirs(export_dirpath, exist_ok=True)
+    
+    if dataset_name == 'selection':
+        vectorize_selected_tweets(embed, dirs, export_dirpath)
+    if dataset_name == 'kaggle':
+        vectorize_kaggle_batches(embed, dirs, dataset_encoding, export_dirpath)
+
+
+def vectorize_selected_tweets(embed, dirs: Dict[str, str], export_dirpath: str
+                            ) -> None:
+    """Encode the selected tweets dataset."""
+    # Treshold that cuts sentiment values to outliers only:
+    #   (0, tres)U(1-tres, 1)
+    sentiment_treshold = 0.3    
+
+    old_limits = [-10, 10]  # Defines the scale in which sentiment is graded.
+    old_range = np.sum(np.abs(old_limits))  #(-10, 10) -> 20
+
+    df = pd.read_csv(dirs['selected_tweets'], skiprows=[0,1],
+                    names=['tweet','sentiment'] )
+    df['sentiment'] = df['sentiment'].apply(lambda x: round(x/old_range + 0.5)) 
+
+    df = df[abs(df['sentiment'])>7]
+
+    vec_df = vectorize_df(df, embed)
+
+    export_filepath = os.path.join(export_dirpath, f'{int(time.time())}.csv')
+    vec_df.to_csv(export_filepath, mode='a', header=False)
+    print(f'Saved to file: {export_filepath}.')
+
+
+def vectorize_kaggle_batches(embed, dirs: Dict[str, str], dataset_encoding: str, 
+                            export_dirpath: str) -> None:
+    """Encode the Kaggle dataset, splitting the process into batches."""
     rprint('[italic red] Getting kaggle data... [/italic red]')
-    if not which_df=='kaggle': # Our set of evaluated tweets
-        filename = dirs['our_rated_tweets_encoded']
-        filename = os.path.join(os.path.dirname(filename),'7.csv')
-        df = pd.read_csv(dirs['our_rated_tweets'],skiprows=[0,1],
-                        names=['tweet','sentiment'] )
-        df = df[abs(df['sentiment'])>7]
-        # Below: (-10,10) -> (0,1)
-        df['sentiment'] = df['sentiment'].apply(lambda x: round(x/20+0.5)) 
-        vec_df = vectorize_df(df, embed)
-        vec_df.to_csv(filename, mode='a', header=False)
-        return
-
-    df = get_kaggle_tweets(dirs['kaggle_dataset_tweets'], dataset_encoding) 
-    dirpath = os.path.join(dirs['dir0'], 'models', 'tweets_encoded',
-                            f'kaggle{int(time.time())}')
-    os.mkdir(dirpath)
+    df = get_kaggle_tweets(dirs['kaggle_tweets'], dataset_encoding) 
 
     df = shuffle(df).reset_index(drop=True)
     df= df.iloc[307200:]
@@ -100,7 +127,7 @@ def vectorize_and_save_ds(model_parameters: Dict[str, Any], dirs: Dict[str, str]
     del df
     gc.collect()
     for inx in range(6, parts_amount):  # iterates by batches per file
-        filename = os.path.join(dirpath, f'enc{inx}.csv')
+        export_filepath = os.path.join(export_dirpath, f'enc{inx}.csv')
         df_part = next(part_gen)
         max_batch = 256     # near ~4k embed definitely stops
         batch_amount = int(len(df_part)/max_batch)
@@ -113,7 +140,7 @@ def vectorize_and_save_ds(model_parameters: Dict[str, Any], dirs: Dict[str, str]
                 df_batch = next(batch_gen)
                 encoded_batch = vectorize_df(df_batch, embed)
                 del df_batch
-                encoded_batch.to_csv(filename, mode='a', header=False) #appends
+                encoded_batch.to_csv(export_filepath, mode='a', header=False) #appends
                 del encoded_batch
                 gc.collect()
                 progress_bar.update(1)
@@ -190,7 +217,8 @@ def vectorize_df(df, embed):
 
 def get_kaggle_tweets(dataset_path: str, dataset_encoding: str, start: int = 0, 
                         amount: int = 0) -> pd.DataFrame:
-    """Load from file the kaggle dataset of 1.6mln tweets."""
+    """Load from file the Kaggle dataset of 1.6mln tweets. Their sentiment
+    is rated as 0 (negative) and 4 (positive)."""
     df = pd.read_csv(dataset_path, encoding = dataset_encoding)
     if amount:
         df = df.iloc[start:amount]
