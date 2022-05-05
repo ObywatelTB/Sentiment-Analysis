@@ -12,6 +12,7 @@ from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split
 import tensorflow_hub as hub
 
+#-----------------------------------------------------------------------            72
 
 def load_datasets(dirs: Dict[str, str]) -> Tuple:
     """Load train and validation datasets. Load kaggle and """
@@ -53,7 +54,7 @@ def get_kaggle_encoded_tweets(dirs: Dict[str, str], dirname: str ='kaggle1638301
     return pd.concat(dfs_arr)
 
 
-def vectorize_phrases(model_parameters: Dict[str, Any], dirs: Dict[str, str], 
+def vectorize_dataset(model_parameters: Dict[str, Any], dirs: Dict[str, str], 
                         dataset_name: str = 'selection') -> None:
     """
     Encode texts of choice using Google USE and save in the files.
@@ -90,26 +91,27 @@ def vectorize_phrases(model_parameters: Dict[str, Any], dirs: Dict[str, str],
         vectorize_kaggle_batches(embed, dirs, dataset_encoding, export_dirpath)
 
 
-def vectorize_selected_tweets(embed, dirs: Dict[str, str], export_dirpath: str
-                            ) -> None:
-    """Encode the selected tweets dataset."""
-    # Treshold that cuts sentiment values to outliers only:
-    #   (0, tres)U(1-tres, 1)
-    sentiment_treshold = 0.3    
-
+def vectorize_selected_tweets(embed, dirs: Dict[str, str], export_dirpath: str,
+                            sentiment_treshold: float = 0.3) -> None:
+    """
+    Encode the selected tweets dataset. Cuts the dataset wrt. sentiment,
+    to outliers only: (0, tres)U(1-tres, 1). Thus leaving only the extreme
+    values of the scores (definitely positive or def. negative).
+    """ 
     old_limits = [-10, 10]  # Defines the scale in which sentiment is graded.
-    old_range = np.sum(np.abs(old_limits))  #(-10, 10) -> 20
+    old_range = np.sum(np.abs(old_limits))  # eg. (-10, 10) -> 20
 
-    df = pd.read_csv(dirs['selected_tweets'], skiprows=[0,1],
+    tweets = pd.read_csv(dirs['selected_tweets'], skiprows=[0,1],
                     names=['tweet','sentiment'] )
-    df['sentiment'] = df['sentiment'].apply(lambda x: round(x/old_range + 0.5)) 
+    tweets['sentiment'] = tweets['sentiment'].apply(lambda x: round(x/old_range + 0.5)) 
+    tres_opposite = 0.5 - sentiment_treshold
+    tweets = tweets[abs(tweets['sentiment'] - 0.5) > tres_opposite]
 
-    df = df[abs(df['sentiment'])>7]
+    vect_tweets = vectorize_phrases(tweets, embed)
 
-    vec_df = vectorize_df(df, embed)
-
-    export_filepath = os.path.join(export_dirpath, f'{int(time.time())}.csv')
-    vec_df.to_csv(export_filepath, mode='a', header=False)
+    export_filepath = os.path.join(export_dirpath, f'{int(time.time())}.npy') 
+    with open(export_filepath, 'wb') as f:
+        np.save(f, vect_tweets)
     print(f'Saved to file: {export_filepath}.')
 
 
@@ -138,12 +140,33 @@ def vectorize_kaggle_batches(embed, dirs: Dict[str, str], dataset_encoding: str,
             # Iterating over small 256 batches, digestible for embed:
             for inx in range(batch_amount): 
                 df_batch = next(batch_gen)
-                encoded_batch = vectorize_df(df_batch, embed)
+                encoded_batch = vectorize_phrases(df_batch, embed)
                 del df_batch
                 encoded_batch.to_csv(export_filepath, mode='a', header=False) #appends
                 del encoded_batch
                 gc.collect()
                 progress_bar.update(1)
+
+
+def vectorize_phrases(phrases: pd.DataFrame, embed) -> np.ndarray:
+    """Vectorize using Google USE."""
+    encoded = embed(phrases['tweet'].values.tolist()).numpy()
+    # phrases['tweet'] = [list(x) for x in array] 
+    return encoded  # encoded[0].shape -> (512,)
+
+
+def get_kaggle_tweets(dataset_path: str, dataset_encoding: str, start: int = 0, 
+                        amount: int = 0) -> pd.DataFrame:
+    """Load from file the Kaggle dataset of 1.6mln tweets. Their sentiment
+    is in {0, 4} set - rated as 0 (negative) and 4 (positive)."""
+    df = pd.read_csv(dataset_path, encoding = dataset_encoding)
+    if amount:
+        df = df.iloc[start:amount]
+    df= df.iloc[:,[0,-1]]
+    df.columns = ['sentiment','tweet']
+    df.sentiment = df.sentiment.map({0:0,4:1})
+    print(f'Got {len(df)} tweets from kaggle set.')
+    return df
 
 
 def split_datasets(data: pd.DataFrame, train_size: int = 1024*70, 
@@ -207,26 +230,6 @@ def batch_generator(df, batch_size):
         for b in range(0, len(df), batch_size):
             new_df = df.iloc[b:b+batch_size]
             yield new_df
-
-
-def vectorize_df(df, embed):
-    array = embed(df['tweet'].values.tolist()).numpy()
-    df['tweet'] = [list(x) for x in array]  # matrix -> list
-    return df #array[0].shape -> (512,)
-
-
-def get_kaggle_tweets(dataset_path: str, dataset_encoding: str, start: int = 0, 
-                        amount: int = 0) -> pd.DataFrame:
-    """Load from file the Kaggle dataset of 1.6mln tweets. Their sentiment
-    is rated as 0 (negative) and 4 (positive)."""
-    df = pd.read_csv(dataset_path, encoding = dataset_encoding)
-    if amount:
-        df = df.iloc[start:amount]
-    df= df.iloc[:,[0,-1]]
-    df.columns = ['sentiment','tweet']
-    df.sentiment = df.sentiment.map({0:0,4:1})
-    print(f'Got {len(df)} tweets from kaggle set.')
-    return df
 
 
 def string_to_ndarray(a_string: str) -> np.ndarray:
