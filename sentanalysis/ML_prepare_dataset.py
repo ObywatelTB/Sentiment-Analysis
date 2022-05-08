@@ -12,46 +12,29 @@ from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split
 import tensorflow_hub as hub
 
-#-----------------------------------------------------------------------            72
 
-def load_datasets(dirs: Dict[str, str]) -> Tuple:
-    """Load train and validation datasets. Load kaggle and """
-    df = get_kaggle_encoded_tweets(dirs)
-    df_ours = pd.read_csv(dirs['selected_tweets_encoded'],header=None,
-                        usecols=[1,2],names=['tweet','sentiment'])
-    df_ours['tweet'] = df_ours['tweet'].apply(string_to_ndarray)
-
-    # df = pd.concat([df,df,df,df,df])    # worked for 500k
-    df_train, df_val, df_test_kaggle = split_datasets(df)
-    all_ds = [df_train, df_val, df_test_kaggle,  df_ours]
-    train_ds, val_ds, test_ds_kaggle,  ds_ours = \
-        [switch_to_numpy_tuple(ads) for ads in all_ds]
-    return train_ds, val_ds, test_ds_kaggle, ds_ours
-
-
-def get_kaggle_encoded_tweets(dirs: Dict[str, str], dirname: str ='kaggle1638301819'
-                            ) -> pd.DataFrame:
+def get_encoded_kaggle_tweets_datasets(dirs: Dict[str, str], 
+        filename: str ='kaggle1652003523.npz') -> Tuple[Tuple, Tuple]:
     """
-    Load previously performed encodings of the kaggle 1.6mln tweets dataset.
-
-    Args:
-        dirs (dict[str, str]) : The main project directories.
-        dirname (str) : The path to directory with the Kaggle dataset.
-
-    Returns:
-        dfs_arr (DataFrame) : Texts encoded with the Gooogle USE encoder.
-    Raises:
+    Load previously performed encodings of the Kaggle 1.6mln tweets dataset.
+    Return two datasets: train and test ones.
     """
-    dirpath = dirs.get('kaggle_encoded')
-    dfs_arr = []
-    filenames = os.listdir(dirpath)[:5]
-    with tqdm(total= len(filenames) ) as progress_bar:
-        for fn in filenames:
-            filepath = os.path.join(dirpath, fn)
-            dfs_arr.append( pd.read_csv(filepath, header=None,usecols=[1,2],
-                                        names=['sentiment','tweet']) )
-            progress_bar.update(1)
-    return pd.concat(dfs_arr)
+    filepath = os.path.join(dirs['kaggle_encoded'], filename)
+    loaded = np.load(filepath)
+    X, Y = loaded['X'], loaded['Y']
+
+    Xtrain, Xtest, Ytrain, Ytest = train_test_split(X, Y, test_size=0.1, shuffle=True)
+    return (Xtrain, Ytrain), (Xtest, Ytest)
+
+
+def get_encoded_selected_tweets(dirs: Dict[str, str], 
+        filename: str='selection1652012833.npz') -> Tuple[np.ndarray, np.ndarray]:
+    """Load two ndarrays of: previously encoded selected tweets,
+    and corresponding target values ({0,1})."""
+    filepath = os.path.join(dirs['selected_tweets_encoded'], filename)
+    loaded = np.load(filepath)
+    # diag.get_most_recent_date(diag_path, 'correlation', 'int_format', files_only=True)
+    return loaded['X'], loaded['Y']
 
 
 def vectorize_dataset(model_parameters: Dict[str, Any], dirs: Dict[str, str], 
@@ -63,8 +46,8 @@ def vectorize_dataset(model_parameters: Dict[str, Any], dirs: Dict[str, str],
         model_parameters (dict[str, Any]) : Parameters concerning model 
         structure, training parameters.
         dirs (dirs[str, str]) : A set of needed directory paths.
-        which_df (str) : 'kaggle'/'selection' - Chose between two different sets
-        of texts to vectorize.
+        which_df (str) : 'kaggle'/'selection' - Choose between two different 
+        sets of texts to vectorize.
 
     Returns:
         None
@@ -72,24 +55,15 @@ def vectorize_dataset(model_parameters: Dict[str, Any], dirs: Dict[str, str],
     Raises:
     """
     dataset_encoding = model_parameters.get('dataset_encoding', '')
+
     rprint('[italic red] Loading the encoder... [/italic red]')
     embed = hub.load(dirs.get('universal_sentence_encoder', ''))
 
-    export_dirpath = os.path.join(dirs['opinions_encoded'], 
-                                'selected_tweets_encoded')
-    # export_dirpath = {
-    #     'selection': os.path.join(dirs['opinions_encoded'], 
-    #                             'selected_tweets_encoded'),
-    #     'kaggle': os.path.join(dirs['opinions_encoded'],
-    #                             f'kaggle{int(time.time())}')
-    # }[dataset_name]
-
-    if not os.path.exists(export_dirpath):
-        os.makedirs(export_dirpath, exist_ok=True)
-    
     if dataset_name == 'selection':
+        export_dirpath = dirs['selected_tweets_encoded']
         vectorize_selected_tweets(embed, dirs, export_dirpath)
     if dataset_name == 'kaggle':
+        export_dirpath = dirs['kaggle_encoded']
         vectorize_kaggle_batches(embed, dirs, dataset_encoding, export_dirpath)
 
 
@@ -110,8 +84,8 @@ def vectorize_selected_tweets(embed, dirs: Dict[str, str], export_dirpath: str,
     tweets = pd.read_csv(dirs['selected_tweets'], skiprows=[0,1],
                     names=['tweet','sentiment'] )
     tweets['sentiment'] = tweets['sentiment'].apply(lambda x: x/old_range + 0.5)
-    tres_opposite = 0.5 - sentiment_treshold
-    tweets = tweets[abs(tweets['sentiment'] - 0.5) > tres_opposite] # ~600 -> 270
+    # tres_opposite = 0.5 - sentiment_treshold
+    # tweets = tweets[abs(tweets['sentiment'] - 0.5) > tres_opposite] # ~600 -> 270
     tweets['sentiment'] = tweets['sentiment'].apply(round)
 
     vect_tweets, targets = vectorize_phrases(tweets, embed)
@@ -119,20 +93,20 @@ def vectorize_selected_tweets(embed, dirs: Dict[str, str], export_dirpath: str,
 
 
 def vectorize_kaggle_batches(embed, dirs: Dict[str, str], dataset_encoding: str, 
-                            export_dirpath: str) -> None:
+                            export_dirpath: str, limit: int = 900000) -> None:
     """Encode the Kaggle dataset, splitting the process into batches."""
     rprint('[italic red] Loading kaggle data... [/italic red]')
     tweets = get_kaggle_tweets(dirs['kaggle_tweets'], dataset_encoding) 
 
     tweets = shuffle(tweets).reset_index(drop=True)
-    tweets = tweets.iloc[:921600]
+    tweets = tweets.iloc[:limit]   #921600
     max_batch = 256     # near ~4k embed definitely stops
     batch_amount = int(len(tweets)/max_batch)
     batch_gen = batch_generator(tweets, batch_size = max_batch)
-    del tweets; gc.collect()
     vectorized_tweets = []
     targets = []
     rprint(f'[italic red] Encoding {len(tweets)} tweets...[/italic red]')
+    del tweets; gc.collect()
     with tqdm(total= batch_amount ) as progress_bar:
         # Iterating over small 256-long-batches, digestible for embed:
         for inx in range(batch_amount):
@@ -150,6 +124,9 @@ def vectorize_kaggle_batches(embed, dirs: Dict[str, str], dataset_encoding: str,
 def save_vectorized_dataset(export_dirpath: str, filename:str, vect_tweets: np.ndarray,
                             targets: np.ndarray) -> None:
     """Saves encoded tweets and targets to numpy's .npz file."""
+    if not os.path.exists(export_dirpath):
+        os.makedirs(export_dirpath, exist_ok=True)
+    
     export_filename = f'{filename}{int(time.time())}.npz'
     export_filepath = os.path.join(export_dirpath, export_filename)
     np.savez(export_filepath, X=vect_tweets, Y=targets) #X,Y - dictionary keys
@@ -229,28 +206,7 @@ def split_datasets(data: pd.DataFrame, train_size: int = 1024*70,
     return df_train, df_val, df_test
 
 
-def switch_to_numpy_tuple(data: pd.DataFrame):
-    X = data.tweet.to_numpy()
-    Y = data.sentiment.to_numpy()
-    X = [np.asarray(x).astype('float32') for x in X]
-    Y = [x.astype('float32') for x in Y]
-    X = np.array(X)
-    Y = np.array(Y)
-    return (X,Y)
-
-
 def string_to_ndarray(a_string: str) -> np.ndarray:
     """Get an ndarray from a string loaded from a file."""
     a_list = [float(x) for x in a_string.replace('[','').replace(']','').split(',')]
     return np.asarray(a_list, dtype=np.float)
-
-
-def prepare_data_set0(data: pd.DataFrame):
-    X = data.tweet.to_numpy()
-    Y = data.sentiment.to_numpy()
-    # numeric_dataset = tf.data.Dataset.from_tensor_slices((X, Y))
-    # ds_final = numeric_dataset.shuffle(1000).batch(BATCH_SIZE) #numeric_batches
-
-    AUTOTUNE = tf.data.AUTOTUNE
-    # ds_final = ds_final.cache().prefetch(buffer_size=AUTOTUNE)
-    return X,Y #ds_final
