@@ -75,12 +75,14 @@ def vectorize_dataset(model_parameters: Dict[str, Any], dirs: Dict[str, str],
     rprint('[italic red] Loading the encoder... [/italic red]')
     embed = hub.load(dirs.get('universal_sentence_encoder', ''))
 
-    export_dirpath = {
-        'selection': os.path.join(dirs['opinions_encoded'], 
-                                'selected_tweets_encoded'),
-        'kaggle': os.path.join(dirs['opinions_encoded'],
-                                f'kaggle{int(time.time())}')
-    }[dataset_name]
+    export_dirpath = os.path.join(dirs['opinions_encoded'], 
+                                'selected_tweets_encoded')
+    # export_dirpath = {
+    #     'selection': os.path.join(dirs['opinions_encoded'], 
+    #                             'selected_tweets_encoded'),
+    #     'kaggle': os.path.join(dirs['opinions_encoded'],
+    #                             f'kaggle{int(time.time())}')
+    # }[dataset_name]
 
     if not os.path.exists(export_dirpath):
         os.makedirs(export_dirpath, exist_ok=True)
@@ -97,76 +99,91 @@ def vectorize_selected_tweets(embed, dirs: Dict[str, str], export_dirpath: str,
     Encode the selected tweets dataset. Cuts the dataset wrt. sentiment,
     to outliers only: (0, tres)U(1-tres, 1). Thus leaving only the extreme
     values of the scores (definitely positive or def. negative).
+
+    Args:
+        sentiment_treshold (float) : It is a percentage of values to leave
+        from boths sides. So it leaves twice the amount (eg. 0.3 -> 60% left).
     """ 
-    old_limits = [-10, 10]  # Defines the scale in which sentiment is graded.
-    old_range = np.sum(np.abs(old_limits))  # eg. (-10, 10) -> 20
+    old_limits = [-9, 9]  # Defines the scale in which sentiment is graded.
+    old_range = np.sum(np.abs(old_limits))  # eg. (-9, 9) -> 18
 
     tweets = pd.read_csv(dirs['selected_tweets'], skiprows=[0,1],
                     names=['tweet','sentiment'] )
-    tweets['sentiment'] = tweets['sentiment'].apply(lambda x: round(x/old_range + 0.5)) 
+    tweets['sentiment'] = tweets['sentiment'].apply(lambda x: x/old_range + 0.5)
     tres_opposite = 0.5 - sentiment_treshold
-    tweets = tweets[abs(tweets['sentiment'] - 0.5) > tres_opposite]
+    tweets = tweets[abs(tweets['sentiment'] - 0.5) > tres_opposite] # ~600 -> 270
+    tweets['sentiment'] = tweets['sentiment'].apply(round)
 
-    vect_tweets = vectorize_phrases(tweets, embed)
-
-    export_filepath = os.path.join(export_dirpath, f'{int(time.time())}.npy') 
-    with open(export_filepath, 'wb') as f:
-        np.save(f, vect_tweets)
-    print(f'Saved to file: {export_filepath}.')
+    vect_tweets, targets = vectorize_phrases(tweets, embed)
+    save_vectorized_dataset(export_dirpath, 'selection', vect_tweets, targets)
 
 
 def vectorize_kaggle_batches(embed, dirs: Dict[str, str], dataset_encoding: str, 
                             export_dirpath: str) -> None:
     """Encode the Kaggle dataset, splitting the process into batches."""
-    rprint('[italic red] Getting kaggle data... [/italic red]')
-    df = get_kaggle_tweets(dirs['kaggle_tweets'], dataset_encoding) 
+    rprint('[italic red] Loading kaggle data... [/italic red]')
+    tweets = get_kaggle_tweets(dirs['kaggle_tweets'], dataset_encoding) 
 
-    df = shuffle(df).reset_index(drop=True)
-    df= df.iloc[307200:]
-    tweets_per_file = 1024*50   # ~50k cz around 100k the program fails
-    parts_amount = int(len(df)/tweets_per_file)
-    part_gen = batch_generator(df, batch_size = tweets_per_file)
-    del df
-    gc.collect()
-    for inx in range(6, parts_amount):  # iterates by batches per file
-        export_filepath = os.path.join(export_dirpath, f'enc{inx}.csv')
-        df_part = next(part_gen)
-        max_batch = 256     # near ~4k embed definitely stops
-        batch_amount = int(len(df_part)/max_batch)
-        batch_gen = batch_generator(df_part, batch_size = max_batch)
-        del df_part
-        gc.collect()
-        with tqdm(total= batch_amount ) as progress_bar:
-            # Iterating over small 256 batches, digestible for embed:
-            for inx in range(batch_amount): 
-                df_batch = next(batch_gen)
-                encoded_batch = vectorize_phrases(df_batch, embed)
-                del df_batch
-                encoded_batch.to_csv(export_filepath, mode='a', header=False) #appends
-                del encoded_batch
-                gc.collect()
-                progress_bar.update(1)
+    tweets = shuffle(tweets).reset_index(drop=True)
+    tweets = tweets.iloc[:921600]
+    max_batch = 256     # near ~4k embed definitely stops
+    batch_amount = int(len(tweets)/max_batch)
+    batch_gen = batch_generator(tweets, batch_size = max_batch)
+    del tweets; gc.collect()
+    vectorized_tweets = []
+    targets = []
+    rprint(f'[italic red] Encoding {len(tweets)} tweets...[/italic red]')
+    with tqdm(total= batch_amount ) as progress_bar:
+        # Iterating over small 256-long-batches, digestible for embed:
+        for inx in range(batch_amount):
+            df_batch = next(batch_gen)
+            batch_vect_tweets, batch_targets = vectorize_phrases(df_batch, embed)
+            del df_batch; gc.collect()
+            vectorized_tweets = [*vectorized_tweets, *batch_vect_tweets]
+            targets = [*targets, *batch_targets]
+            progress_bar.update(1)
+    vectorized_tweets = np.array(vectorized_tweets)
+    targets = np.array(targets)
+    save_vectorized_dataset(export_dirpath, 'kaggle', vectorized_tweets, targets)
 
 
-def vectorize_phrases(phrases: pd.DataFrame, embed) -> np.ndarray:
+def save_vectorized_dataset(export_dirpath: str, filename:str, vect_tweets: np.ndarray,
+                            targets: np.ndarray) -> None:
+    """Saves encoded tweets and targets to numpy's .npz file."""
+    export_filename = f'{filename}{int(time.time())}.npz'
+    export_filepath = os.path.join(export_dirpath, export_filename)
+    np.savez(export_filepath, X=vect_tweets, Y=targets) #X,Y - dictionary keys
+    print(f'Saved to file: {export_filepath}.')
+
+
+def vectorize_phrases(phrases: pd.DataFrame, embed
+                        ) -> Tuple[np.ndarray, np.ndarray]:
     """Vectorize using Google USE."""
     encoded = embed(phrases['tweet'].values.tolist()).numpy()
-    # phrases['tweet'] = [list(x) for x in array] 
-    return encoded  # encoded[0].shape -> (512,)
+    # phrases['tweet'] = encoded
+    return encoded, phrases['sentiment'].values  # encoded[0].shape -> (512,)
 
 
 def get_kaggle_tweets(dataset_path: str, dataset_encoding: str, start: int = 0, 
                         amount: int = 0) -> pd.DataFrame:
     """Load from file the Kaggle dataset of 1.6mln tweets. Their sentiment
     is in {0, 4} set - rated as 0 (negative) and 4 (positive)."""
-    df = pd.read_csv(dataset_path, encoding = dataset_encoding)
+    tweets = pd.read_csv(dataset_path, encoding = dataset_encoding)
     if amount:
-        df = df.iloc[start:amount]
-    df= df.iloc[:,[0,-1]]
-    df.columns = ['sentiment','tweet']
-    df.sentiment = df.sentiment.map({0:0,4:1})
-    print(f'Got {len(df)} tweets from kaggle set.')
-    return df
+        tweets = tweets.iloc[start:amount]
+    tweets= tweets.iloc[:,[0,-1]]
+    tweets.columns = ['sentiment','tweet']
+    tweets.sentiment = tweets.sentiment.map({0:0,4:1})
+    print(f'Got {len(tweets)} tweets from kaggle set.')
+    return tweets
+
+
+def batch_generator(data: pd.DataFrame, batch_size: int):
+    """Usage:   a=batch_generator(df,n);   next(a); next(a)."""
+    while True:
+        for i in range(0, len(data), batch_size):
+            data_batch = data.iloc[i: i+batch_size]
+            yield data_batch
 
 
 def split_datasets(data: pd.DataFrame, train_size: int = 1024*70, 
@@ -212,24 +229,14 @@ def split_datasets(data: pd.DataFrame, train_size: int = 1024*70,
     return df_train, df_val, df_test
 
 
-def switch_to_numpy_tuple(df):
-    X = df.tweet.to_numpy()
-    Y = df.sentiment.to_numpy()
+def switch_to_numpy_tuple(data: pd.DataFrame):
+    X = data.tweet.to_numpy()
+    Y = data.sentiment.to_numpy()
     X = [np.asarray(x).astype('float32') for x in X]
     Y = [x.astype('float32') for x in Y]
     X = np.array(X)
     Y = np.array(Y)
     return (X,Y)
-
-
-def batch_generator(df, batch_size):
-    """
-    Usage:   a=test_generator();   next(a); next(a)
-    """
-    while True:
-        for b in range(0, len(df), batch_size):
-            new_df = df.iloc[b:b+batch_size]
-            yield new_df
 
 
 def string_to_ndarray(a_string: str) -> np.ndarray:
@@ -238,9 +245,9 @@ def string_to_ndarray(a_string: str) -> np.ndarray:
     return np.asarray(a_list, dtype=np.float)
 
 
-def prepare_data_set0(df):
-    X = df.tweet.to_numpy()
-    Y = df.sentiment.to_numpy()
+def prepare_data_set0(data: pd.DataFrame):
+    X = data.tweet.to_numpy()
+    Y = data.sentiment.to_numpy()
     # numeric_dataset = tf.data.Dataset.from_tensor_slices((X, Y))
     # ds_final = numeric_dataset.shuffle(1000).batch(BATCH_SIZE) #numeric_batches
 
