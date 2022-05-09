@@ -10,24 +10,19 @@ from nltk.wsd import lesk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer #vader - competition to sentiwordnet
 vader = SentimentIntensityAnalyzer()
 
+import os
 import string           #To import punctuation, such as!"#$%& 
-import sqlite3
 import numpy as np
 import pandas as pd
 from collections import Counter
 from tqdm import tqdm
-import os
+from sklearn.metrics import accuracy_score
 
 from rich import print as rprint
 from rich.console import Console
 from rich.table import Table
 from typing import List, Dict, Any, Tuple
 console = Console()
-
-
-#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 99
-#aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa     79
-#-----------------------------------------------------------------------            72 comments
 
 
 def evaluate_sentiment(opinions: pd.DataFrame, analysis_parameters: Dict[str, Any]
@@ -54,8 +49,8 @@ def evaluate_sentiment(opinions: pd.DataFrame, analysis_parameters: Dict[str, An
     return scores
 
 
-def evaluate_opinions(opinions: np.ndarray, treshold: float, 
-                        is_score_binary: bool) -> np.ndarray:
+def evaluate_opinions(opinions: np.ndarray, treshold: float = 0.25, 
+                        is_score_binary: bool = False) -> np.ndarray:
     """
     Evaluate sentiment of many opinions using the nltk library.
 
@@ -74,6 +69,44 @@ def evaluate_opinions(opinions: np.ndarray, treshold: float,
     if is_score_binary:
         scores = np.sign(scores)
     return scores
+
+
+def test_correctness(test_datasets: Dict[str, Tuple],
+                    treshold: bool = True) -> None:
+    """
+    Compare results of NLTK evaluation with the targets.
+    
+    Args:
+        test_datasets (dict[str,tuple]) : The key defines a dataset's name,
+        the values is a tuple of 2 ndarrays - model's inputs and targets.
+    """
+    print('The results for the NLTK:')
+    for ds_name in test_datasets:
+        dataset = test_datasets[ds_name]
+        X = dataset[0]
+        Y = dataset[1]
+        scores = evaluate_opinions(X)
+        scores = scores/2 + 0.5
+        # Nltk should always have (even little) treshold. Cz many values
+        # are equal to 0 which lowers the accuracy.
+        if treshold:
+            scores, Y = cut_with_treshold(scores, Y)
+        scores_rounded = list(map(round, scores))
+        accu = accuracy_score(scores_rounded, Y)
+        print('Accuracy of {}: {:.3f} %. {} tweets.'.format(ds_name, accu*100, len(Y)))
+
+
+def cut_with_treshold(predictions: np.ndarray, Y: np.ndarray,
+                    sentiment_treshold: float = 0.1) -> Tuple[np.ndarray, np.ndarray]:
+    """Leave only the outliers values in the sentiment predictions."""
+    tres_opposite = 0.5 - sentiment_treshold
+    condition = np.abs(predictions - .5) > tres_opposite
+    predictions = np.where(condition.T, predictions, -1)
+    dataset = list(zip(predictions, Y))
+    dataset = [e for e in dataset if e[0]!=-1]  # Deletes based on treshold
+    predictions, newY = list(zip(*dataset))
+    Y = newY
+    return predictions, Y
 
 
 def find_common_words_in_tweets(all_tweets: pd.DataFrame, key_words_nr: int, 
@@ -193,33 +226,8 @@ def word_in_text(text: str, forbidden_words: List[str]) -> bool:
     return True
 
 
-# Poniższe do paczki diagnostycznej/bazodanowej
-def write_out_tweets_with_words(word_filters, db_name, key_words_nr, shown_bigrams_nr, shown_tweets_nr):
-    inx = 0
-    for index, row in word_filters.iterrows():
-        key = row['words']
-        value = row['count']
-        conn = sqlite3.connect(db_name)
-        if key_words_nr == 2:
-            tweets_db = pd.read_sql("SELECT* FROM tweets_table WHERE content LIKE '%"+key[0]+"%' AND content LIKE '%"+key[1]+
-            "%'  LIMIT "+str(shown_tweets_nr)+"; ", conn)
-        else:
-            tweets_db = pd.read_sql("SELECT* FROM tweets_table WHERE content LIKE '%"+key[0]+"%' AND content LIKE '%"+key[1]+
-            "%' AND content LIKE '%"+key[2]+"%'  LIMIT " + str(shown_tweets_nr)+"; ", conn)
-        conn.close()
-
-        rprint(f'[italic red]Key: {key}, count:{value}[/italic red] \n')
-        for i in range(0, shown_tweets_nr):
-            print(tweets_db['content'][i])
-            print('\n')
-        print('================================================')
-        inx += 1
-        if inx > shown_bigrams_nr:
-            return
-
-
-#===printing out
-def write_out_scores(posts, tab_amount, treshold):
+def write_out_scores(posts: pd.DataFrame, tab_amount: int, treshold: float) -> None:
+    """Printing out sentiment scores."""
     tables_printed = 0
     inx = 0
     while tables_printed < tab_amount:

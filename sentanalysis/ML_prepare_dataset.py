@@ -67,27 +67,9 @@ def vectorize_dataset(model_parameters: Dict[str, Any], dirs: Dict[str, str],
         vectorize_kaggle_batches(embed, dirs, dataset_encoding, export_dirpath)
 
 
-def vectorize_selected_tweets(embed, dirs: Dict[str, str], export_dirpath: str,
-                            sentiment_treshold: float = 0.3) -> None:
-    """
-    Encode the selected tweets dataset. Cuts the dataset wrt. sentiment,
-    to outliers only: (0, tres)U(1-tres, 1). Thus leaving only the extreme
-    values of the scores (definitely positive or def. negative).
-
-    Args:
-        sentiment_treshold (float) : It is a percentage of values to leave
-        from boths sides. So it leaves twice the amount (eg. 0.3 -> 60% left).
-    """ 
-    old_limits = [-9, 9]  # Defines the scale in which sentiment is graded.
-    old_range = np.sum(np.abs(old_limits))  # eg. (-9, 9) -> 18
-
-    tweets = pd.read_csv(dirs['selected_tweets'], skiprows=[0,1],
-                    names=['tweet','sentiment'] )
-    tweets['sentiment'] = tweets['sentiment'].apply(lambda x: x/old_range + 0.5)
-    # tres_opposite = 0.5 - sentiment_treshold
-    # tweets = tweets[abs(tweets['sentiment'] - 0.5) > tres_opposite] # ~600 -> 270
-    tweets['sentiment'] = tweets['sentiment'].apply(round)
-
+def vectorize_selected_tweets(embed, dirs: Dict[str, str], export_dirpath: str) -> None:
+    """Encode the selected tweets dataset.""" 
+    tweets = get_selected_tweets(dirs)
     vect_tweets, targets = vectorize_phrases(tweets, embed)
     save_vectorized_dataset(export_dirpath, 'selection', vect_tweets, targets)
 
@@ -139,6 +121,30 @@ def vectorize_phrases(phrases: pd.DataFrame, embed
     encoded = embed(phrases['tweet'].values.tolist()).numpy()
     # phrases['tweet'] = encoded
     return encoded, phrases['sentiment'].values  # encoded[0].shape -> (512,)
+
+
+def get_selected_tweets(dirs: Dict[str, str], sentiment_treshold: float = 0.3
+                        ) -> pd.DataFrame:
+    """
+    Load selected rated tweets from a csv file. Cuts the dataset wrt. 
+    sentiment, to outliers only: (0, tres)U(1-tres, 1). Thus leaving 
+    only the extreme values of the scores (definitely positive or def. 
+    negative).
+
+    Args:
+        sentiment_treshold (float) : It is a percentage of values to leave
+        from boths sides. So it leaves twice the amount (eg. 0.3 -> 60% left).
+    """
+    old_limits = [-9, 9]  # Defines the scale in which sentiment is graded.
+    old_range = np.sum(np.abs(old_limits))  # eg. (-9, 9) -> 18
+
+    tweets = pd.read_csv(dirs['selected_tweets'], skiprows=[0,1],
+                    names=['tweet','sentiment'] )
+    tweets['sentiment'] = tweets['sentiment'].apply(lambda x: x/old_range + 0.5)
+    # tres_opposite = 0.5 - sentiment_treshold
+    # tweets = tweets[abs(tweets['sentiment'] - 0.5) > tres_opposite] # ~600 -> 270
+    tweets['sentiment'] = tweets['sentiment'].apply(round)
+    return tweets
 
 
 def get_kaggle_tweets(dataset_path: str, dataset_encoding: str, start: int = 0, 

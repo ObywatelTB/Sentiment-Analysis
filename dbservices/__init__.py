@@ -1,5 +1,5 @@
 """
-DbGetter
+DbServices
 ===
 The package provides services to get records to and from databases.
 It supports:
