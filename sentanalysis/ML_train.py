@@ -13,7 +13,7 @@ from tensorflow.keras.layers import Dense, Input, Dropout
 from tensorflow.keras import layers
 from sklearn.metrics import accuracy_score
 
-from sentanalysis.nltk_utils import cut_with_treshold
+from sentanalysis.nltk_utils import test_correctness
 from sentanalysis.ML_prepare_dataset import get_encoded_kaggle_tweets_datasets, \
                                             get_encoded_selected_tweets
 
@@ -47,18 +47,25 @@ def perform_machine_learning(model_parameters: Dict[str, Any], dirs: Dict[str, s
     history = train(model_parameters, dirs, model, train_ds) 
     visualize(history)
 
-    test_ds = {'Kaggle':test_ds_kaggle, 'Selected tweets':test_ds_selected} 
-    test_correctness(model, test_ds)
+    kaggle_pre = model.predict(test_ds_kaggle[0]).T[0]
+    selection_pre = model.predict(test_ds_selected[0]).T[0]
+
+    test_ds = {'Kaggle': (kaggle_pre, test_ds_kaggle[1]), 
+                'Selected tweets': (selection_pre, test_ds_selected[1])} 
+    test_correctness(test_ds)
 
 
-def predict(model_parameters: Dict[str, Any], dirs: Dict[str, str], 
-            dirname: str='1652112389') -> None:
+def predict(model_parameters: Dict[str, Any], dataset_to_predict: Tuple[np.ndarray, Any],
+            dirs: Dict[str, str], cp_dirname: str='1652112389') -> None:
     """
     Load the model and test its predictions.
 
     Args:
         model_parameters (dict[str, Any]) : Parameters concerning model structure.
+        dataset_to_predict tuple(ndarray, Any) : The first value of the tuple 
+        matters, because we use it to perform the predictions.
         dirs (dirs[str, str]) : A set of needed directory paths.
+        cp_dirname (str) : The chosen model checkpoint directory name.
 
     Returns:
         None
@@ -69,15 +76,12 @@ def predict(model_parameters: Dict[str, Any], dirs: Dict[str, str],
 
     model  = encoded_phrase_model()
     checkpoint_path = os.path.join(dirs['machine_learning'], model_name,
-                                    'models', dirname, 'cp.ckpt')
+                                    'models', cp_dirname, 'cp.ckpt')
     model.load_weights(checkpoint_path).expect_partial()
 
-    # Below is not gonna work cz test_ds_kaggle may take from the trained DS:
-    # _, test_ds_kaggle = get_encoded_kaggle_tweets_datasets(dirs)
-    test_ds_selected = get_encoded_selected_tweets(dirs)
-
-    test_ds = {'Selected tweets': test_ds_selected} 
-    test_correctness(model, test_ds)
+    X = dataset_to_predict[0]
+    predictions = model.predict(X).T[0]
+    return predictions
 
 
 def encoded_phrase_model() -> tf.keras.Model:
@@ -119,28 +123,6 @@ def train(model_parameters: Dict[str, Any], dirs: Dict[str, str], model: tf.kera
                         # steps_per_epoch=steps_per_epoch,#10000,
                         callbacks=[cp_callback])  
     return history
-
-
-def test_correctness(trained_model: tf.keras.Model, test_datasets: Dict[str, Tuple],
-                    treshold: bool = True) -> None:
-    """
-    Use model.predict to compare results with the targets.
-    
-    Args:
-        test_datasets (dict[str,tuple]) : The key defines a dataset's name,
-        the values is a tuple of 2 ndarrays - model's inputs and targets.
-    """
-    print('The results for our ML sentiment model:')
-    for ds_name in test_datasets:
-        dataset = test_datasets[ds_name]
-        X = dataset[0]
-        Y = dataset[1]
-        predictions = trained_model.predict(X).T[0]
-        if treshold:
-            predictions, Y = cut_with_treshold(predictions, Y)
-        predictions_rounded = list(map(round, predictions))
-        accu = accuracy_score(predictions_rounded, Y)
-        print('Accuracy of {}: {:.3f} %. {} tweets.'.format(ds_name, accu*100, len(Y)))
 
 
 def visualize(history: tf.keras.callbacks.History) -> None:

@@ -50,7 +50,7 @@ def evaluate_sentiment(opinions: pd.DataFrame, analysis_parameters: Dict[str, An
 
 
 def evaluate_opinions(opinions: np.ndarray, treshold: float = 0.25, 
-                        is_score_binary: bool = False) -> np.ndarray:
+            is_score_binary: bool = False, normalize: bool=False) -> np.ndarray:
     """
     Evaluate sentiment of many opinions using the nltk library.
 
@@ -68,36 +68,38 @@ def evaluate_opinions(opinions: np.ndarray, treshold: float = 0.25,
     scores = np.where(are_over_treshold, scores, np.zeros(len(opinions)))
     if is_score_binary:
         scores = np.sign(scores)
+    if normalize:
+        return scores/2 + 0.5   # (-1,1) -> (0,1)
     return scores
 
 
-def test_correctness(test_datasets: Dict[str, Tuple],
-                    treshold: bool = True) -> None:
+def test_correctness(predictions_datasets: Dict[str, Tuple],
+                    treshold: bool = True, treshold_val: float = 0.2) -> None:
     """
     Compare results of NLTK evaluation with the targets.
     
     Args:
-        test_datasets (dict[str,tuple]) : The key defines a dataset's name,
-        the values is a tuple of 2 ndarrays - model's inputs and targets.
+        test_datasets (dict[str,tuple]) : The key defines a dataset's info,
+        the values is a tuple of 2 ndarrays - model's predictions and targets.
     """
-    print('The results for the NLTK:')
-    for ds_name in test_datasets:
-        dataset = test_datasets[ds_name]
-        X = dataset[0]
+    print('Testing for the treshold: {:.0f}%'.format(treshold_val*100))
+    for info in predictions_datasets:
+        print(f'{info}:')
+        dataset = predictions_datasets[info]
+        predictions = dataset[0]
         Y = dataset[1]
-        scores = evaluate_opinions(X)
-        scores = scores/2 + 0.5
         # Nltk should always have (even little) treshold. Cz many values
         # are equal to 0 which lowers the accuracy.
         if treshold:
-            scores, Y = cut_with_treshold(scores, Y)
-        scores_rounded = list(map(round, scores))
-        accu = accuracy_score(scores_rounded, Y)
-        print('Accuracy of {}: {:.3f} %. {} tweets.'.format(ds_name, accu*100, len(Y)))
+            predictions, Y = cut_with_treshold(predictions, Y, treshold_val)
+        predictions_rounded = list(map(round, predictions))
+        accu = accuracy_score(predictions_rounded, Y)
+        print('\tAccuracy: {:.3f} %. \n\tCalculated on {} tweets.' \
+            .format(accu*100, len(Y)))
 
 
 def cut_with_treshold(predictions: np.ndarray, Y: np.ndarray,
-                    sentiment_treshold: float = 0.1) -> Tuple[np.ndarray, np.ndarray]:
+                    sentiment_treshold: float) -> Tuple[np.ndarray, np.ndarray]:
     """Leave only the outliers values in the sentiment predictions."""
     tres_opposite = 0.5 - sentiment_treshold
     condition = np.abs(predictions - .5) > tres_opposite
