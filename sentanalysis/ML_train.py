@@ -8,22 +8,18 @@ from tqdm import tqdm   #progress bar
 from itertools import compress  #do indeksów branych boolami
 from typing import Tuple, List, Dict, Any
 import tensorflow as tf
-from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Dense, Input, Dropout
-from tensorflow.keras import layers
-from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
 
 from sentanalysis.nltk_utils import test_correctness
-from sentanalysis.ML_prepare_dataset import get_encoded_kaggle_tweets_datasets, \
-                                            get_encoded_selected_tweets
+from sentanalysis.ML_prepare_dataset import load_encoded_tweets
 
 
 gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.333)
 sess = tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(gpu_options=gpu_options))
 
 
-def perform_machine_learning(model_parameters: Dict[str, Any], dirs: Dict[str, str]
-                            ) -> None:
+def perform_machine_learning(model_parameters: Dict[str, Any], 
+                            dirs: Dict[str, str], model: tf.keras.Model) -> None:
     """
     Set the model architecture, train the model and test corectness.
 
@@ -37,11 +33,14 @@ def perform_machine_learning(model_parameters: Dict[str, Any], dirs: Dict[str, s
 
     Raises:
     """
-    train_ds, test_ds_kaggle = get_encoded_kaggle_tweets_datasets(dirs)
-    test_ds_selected = get_encoded_selected_tweets(dirs)
+    X, Y = load_encoded_tweets(dirs, 'kaggle')
+    Xtrain, Xtest, Ytrain, Ytest = train_test_split(X, Y, test_size=0.1, shuffle=True)
+    train_ds = (Xtrain, Ytrain)
+    test_ds_kaggle = (Xtest, Ytest)
+
+    test_ds_selected = load_encoded_tweets(dirs, 'selection')
 
     logging.set_verbosity(logging.ERROR) # Reduce logging output 
-    model  = encoded_phrase_model()
 
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['acc'])
     history = train(model_parameters, dirs, model, train_ds) 
@@ -55,7 +54,8 @@ def perform_machine_learning(model_parameters: Dict[str, Any], dirs: Dict[str, s
     test_correctness(test_ds)
 
 
-def predict(model_parameters: Dict[str, Any], dataset_to_predict: Tuple[np.ndarray, Any],
+def predict(model_parameters: Dict[str, Any], model: tf.keras.Model, 
+            dataset_to_predict: Tuple[np.ndarray, Any],
             dirs: Dict[str, str], cp_dirname: str='1652112389') -> None:
     """
     Load the model and test its predictions.
@@ -74,7 +74,6 @@ def predict(model_parameters: Dict[str, Any], dataset_to_predict: Tuple[np.ndarr
     """
     model_name = model_parameters.get('model_name', '')
 
-    model  = encoded_phrase_model()
     checkpoint_path = os.path.join(dirs['machine_learning'], model_name,
                                     'models', cp_dirname, 'cp.ckpt')
     model.load_weights(checkpoint_path).expect_partial()
@@ -82,25 +81,6 @@ def predict(model_parameters: Dict[str, Any], dataset_to_predict: Tuple[np.ndarr
     X = dataset_to_predict[0]
     predictions = model.predict(X).T[0]
     return predictions
-
-
-def encoded_phrase_model() -> tf.keras.Model:
-    """
-    Define model structure. It is a model handling float ndarrays as an 
-    input. So that it can compute the phrases encoded with Google USE. 
-    The target is a boolean label.
-    """
-    rprint('[italic red] Defining the model... [/italic red]')
-
-    model = Sequential()
-    model.add(Input(shape=(512,),dtype='float32'))
-    model.add(Dense(128, activation = 'relu'))
-    model.add(Dropout(0.2))
-    model.add(Dense(64, activation = 'relu'))
-    model.add(Dropout(0.2))
-    model.add(Dense(1, activation = 'sigmoid'))
-
-    return model
 
 
 def train(model_parameters: Dict[str, Any], dirs: Dict[str, str], model: tf.keras.Model, 

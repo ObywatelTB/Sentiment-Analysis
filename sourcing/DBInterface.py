@@ -9,8 +9,8 @@ class DBInterface(metaclass=abc.ABCMeta):
     def __subclasshook__(cls, subclass):
         return (hasattr(subclass, 'specify_data_range') and
                 callable(subclass.specify_data_range) and
-                hasattr(subclass, 'get_data_batch') and
-                callable(subclass.get_data_batch) and
+                hasattr(subclass, 'data_batch_generator') and
+                callable(subclass.data_batch_generator) and
                 hasattr(subclass, 'delete_duplicates') and
                 callable(subclass.delete_duplicates) and
                 hasattr(subclass, 'post_list_of_data') and
@@ -32,7 +32,7 @@ class DBInterface(metaclass=abc.ABCMeta):
 
 
     @abc.abstractmethod
-    def get_data_batch(self, tablename: str, period_start: datetime, 
+    def data_batch_generator(self, tablename: str, period_start: datetime, 
                         period_end: datetime) -> pd.DataFrame:
         """Get a batch of records within specified timestamps"""
         raise NotImplementedError

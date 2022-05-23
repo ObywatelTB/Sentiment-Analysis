@@ -22,11 +22,11 @@ And machine learning tools:
 - predict(model_parameters: Dict[str, Any], dirs: Dict[str, str], 
             dirname: str='1652112389') -> None
 """
-from sentanalysis.sentiment_analysis import analyse_opinions
-from sentanalysis.nltk_utils import evaluate_opinions
-from sentanalysis.nltk_utils import find_common_words_in_tweets, \
-                                aggregate_filters, \
-                                save_filters
+# from sentanalysis.sentiment_analysis import analyse_opinions
+# from sentanalysis.nltk_utils import evaluate_opinions
+# from sentanalysis.nltk_utils import find_common_words_in_tweets, \
+#                                 aggregate_filters, \
+#                                 save_filters
 
-from sentanalysis.ML_prepare_dataset import vectorize_dataset
-from sentanalysis.ML_train import perform_machine_learning, predict
+# from sentanalysis.ML_prepare_dataset import vectorize_dataset
+# from sentanalysis.ML_train import perform_machine_learning, predict

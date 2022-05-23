@@ -1,5 +1,6 @@
 /.vscode
+todo.txt
 
 /__pycache__
-/dbservices/__pycache__
+/sourcing/__pycache__
 /sentanalysis/__pycache__
