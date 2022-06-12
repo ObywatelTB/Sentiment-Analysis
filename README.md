@@ -20,7 +20,7 @@ a Kaggle's dataset of 1.6mln tweets with their rated sentiment scores. Then one 
 consisting of a few layers which is then being trained on the encoded Kaggle dataset. This model then can then be tested
 on a smaller set of a few hundred tweets, which tends to give more accurate results than NLTK.
 
-There is also an example file - run_sentiment_ML.py, which contains the simple model's structure. The file have a script
+There is also an example file - run_sentiment_ML.py, which contains the simple model's structure. The file has a script
 allowing to launch the model training and a function to compare results between NLTK and the aforementioned custom model.
 
 
