@@ -94,7 +94,7 @@ def test_correctness(predictions_datasets: Dict[str, Tuple],
             predictions, Y = cut_with_treshold(predictions, Y, treshold_val)
         predictions_rounded = list(map(round, predictions))
         accu = accuracy_score(predictions_rounded, Y)
-        print('\tAccuracy: {:.3f} %. \n\tCalculated on {} tweets.' \
+        print('\tAccuracy for the outliers: {:.3f} %. \n\tCalculated on {} tweets.' \
             .format(accu*100, len(Y)))
 
 

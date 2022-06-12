@@ -54,9 +54,9 @@ def perform_machine_learning(model_parameters: Dict[str, Any],
     test_correctness(test_ds)
 
 
-def predict(model_parameters: Dict[str, Any], model: tf.keras.Model, 
+def predict(model_parameters: Dict[str, Any], dirs: Dict[str, str], 
             dataset_to_predict: Tuple[np.ndarray, Any],
-            dirs: Dict[str, str], cp_dirname: str='1652112389') -> None:
+            model: tf.keras.Model, cp_dirname: str='1652112389') -> None:
     """
     Load the model and test its predictions.
 

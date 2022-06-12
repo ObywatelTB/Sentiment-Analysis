@@ -1,11 +1,11 @@
+import os
 import numpy as np
 import pandas as pd
 import re
+from datetime import datetime
 from datetime import timedelta
 from typing import Tuple, List, Dict, Any
 
-from sourcing.CSVService import load_kaggle_tweets
-        
 
 def get_period_timedelta(analysed_period: str) -> timedelta:
     """
@@ -32,6 +32,49 @@ def get_period_timedelta(analysed_period: str) -> timedelta:
         raise('Wrong period!')
 
     return period_timedelta
+
+
+def get_most_recent_filepath(dirpath: str, name_splitter: str, case, 
+                        files_only=True) -> Any:
+    """
+    Gives back the date of the file in the folder, that has the most 
+    recent date.
+
+    Args:
+        dir_path (str): Full path to the directory.
+        name_splitter (str): b
+        case (): 'date_format' or 'int_format'. Specifies how the  
+        timestamps in files' names are formatted.
+    
+    Returns:
+        filepath (Any): A full path to the file which has in its name
+        the most recent timestamp for a chosen directory. 
+    Raises:
+    """
+    if case == 'date_format':
+        most_recent = datetime.strptime('2000-01-01-15', '%Y-%m-%d-%H') 
+        getdate = lambda fn, namespl: \
+                datetime.strptime(fn.split(namespl)[0], '%Y-%m-%d-%H')
+    elif case == 'int_format':
+        most_recent = 0
+        getdate = lambda fn, namespl: int(fn.split(namespl)[0])
+
+    if not os.path.exists(dirpath):
+        os.mkdir(dirpath)
+    for filename in os.listdir(dirpath):
+        file_validation = files_only and os.path.isfile(os.path.join(dirpath,filename))
+        dir_validation = (not files_only) and (
+                        not os.path.isfile(os.path.join(dirpath,filename)))
+        if file_validation or dir_validation:
+            date = getdate(filename, name_splitter)
+            if date > most_recent:
+                most_recent = date
+
+    for fn in os.listdir(dirpath):
+        if str(most_recent) in fn:
+            filename = fn
+    filepath = os.path.join(dirpath, filename)
+    return filepath
 
 
 def prepare_df_info(scores: pd.DataFrame, const_params: Dict[str,str]

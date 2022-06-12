@@ -7,17 +7,20 @@ package - NLTK Vader. Getting in some cases the ~82% accuracy to NLTK's ~72%.
 
 
 The **Sourcing** package provides functions allowing to get data from a local DB, cloud DB or .csv files.
-The local DB - MySQL and the cloud DB - Firebase both are implementations of an interface defined in the package,
+The local DB - MySQL and the cloud DB - Firebase both have implementations of an interface defined in the package,
 so that they can be later used in the same manner during the sentiment analysis.
 
 The **SentAnalysis** package provides both NLTK functions and machine learning Tensorflow functions allowing
 to built a custom sentiment prediction model.
- - The use of the NLTK is straight forward. The data is brought from a DB using batch generators and evaluated.
+ - The use of the NLTK is straightforward. The data is brought from a DB using batch generators and evaluated.
 
  - The second approach consists of more steps. First, one loads a Google's Universal Sentence Encoder, a state of the art
 linguistic model which allows to seek for semantic similarity between phrases. This encoder is then used to encode
 a Kaggle's dataset of 1.6mln tweets with their rated sentiment scores. Then one can create a simple Deep Learning model
 consisting of a few layers which is then being trained on the encoded Kaggle dataset. This model then can then be tested
 on a smaller set of a few hundred tweets, which tends to give more accurate results than NLTK.
+
+There is also an example file - run_sentiment_ML.py, which contains the simple model's structure. The file have a script
+allowing to launch the model training and a function to compare results between NLTK and the aforementioned custom model.
 
 

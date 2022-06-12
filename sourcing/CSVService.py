@@ -85,7 +85,7 @@ class CSVService:
 
         tweets = pd.read_csv(csv_path, skiprows=[0,1],
                         names=['tweet','sentiment'] )
-
+        tweets.dropna(inplace=True)
         tweets['sentiment'] = tweets['sentiment'].apply(lambda x: x/old_range + 0.5)
         tweets['sentiment'] = tweets['sentiment'].apply(round)
         return tweets

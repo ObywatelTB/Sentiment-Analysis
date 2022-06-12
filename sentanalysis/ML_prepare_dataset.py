@@ -12,7 +12,7 @@ from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split
 import tensorflow_hub as hub
 
-from diagnostics import utils as du
+from sourcing import utils as su
 import sourcing.utils as sut
 from sourcing.SQLiteService import SQLiteService as sqlserv
 from sourcing.CSVService import CSVService as csvserv
@@ -32,9 +32,9 @@ def load_encoded_tweets(dirs: Dict[str, str], dataset_name: str,
         'db': dirs['fil_opinions_encoded']
     }[dataset_name]
     
-    filepath = du.get_most_recent_filepath(dirpath, '.', 'int_format')
+    filepath = su.get_most_recent_filepath(dirpath, '.', 'int_format')
     loaded = np.load(filepath)
-    return loaded['X'], loaded['Y']
+    return loaded['X'], loaded['Y'] 
 
 
 def vectorize_dataset(model_parameters: Dict[str, Any], dirs: Dict[str, str], 
